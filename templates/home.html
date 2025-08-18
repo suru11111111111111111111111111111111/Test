@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TERROR APK - Device Approval</title>
+  <title>HASSAN APK - Device Approval</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
   <style>
     :root {
@@ -23,6 +23,7 @@
       align-items: center;
       min-height: 100vh;
       text-align: center;
+      flex-direction: column;
     }
     .container {
       max-width: 420px;
@@ -124,6 +125,23 @@
     .contact-buttons {
       margin-top: 10px;
     }
+
+    /* Footer */
+    .footer {
+      margin-top: 25px;
+    }
+    .footer a {
+      color: white;
+      font-size: 1.5rem;
+      margin: 0 12px;
+      transition: color 0.3s ease, transform 0.3s ease;
+    }
+    .footer a:hover {
+      transform: scale(1.2);
+    }
+    .footer a.whatsapp:hover { color: #25D366; }
+    .footer a.facebook:hover { color: #1877F2; }
+    .footer a.discord:hover { color: #5865F2; }
   </style>
 </head>
 <body>
@@ -173,6 +191,13 @@
     </form>
     <p class="info">This ID will remain the same even if you reinstall the app or change browsers.</p>
     {% endif %}
+
+    <!-- Footer Icons -->
+    <div class="footer">
+      <a href="https://wa.me/03097626738" class="whatsapp" target="_blank"><i class="fab fa-whatsapp"></i></a>
+      <a href="https://www.facebook.com/share/16xeKko5ut/" class="facebook" target="_blank"><i class="fab fa-facebook"></i></a>
+      <a href="https://discord.com/invite/" class="discord" target="_blank"><i class="fab fa-discord"></i></a>
+    </div>
   </div>
 </body>
 </html>
