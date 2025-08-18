@@ -11,7 +11,7 @@ from flask import Flask, request, redirect, url_for, render_template, make_respo
 # CONFIGURATION
 # ====================================================
 class Config:
-    ADMIN_PATH = "/admin-faizi"
+    ADMIN_PATH = "/admin"
     ADMIN_PASSWORD_HASH = hashlib.sha256(b"FFF").hexdigest()  # Change this!
     DATA_FILE = "approved_data.json"
     START_URL = "https://faiizuapk.unaux.com/"
