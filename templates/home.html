@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERROR APK - Device Approval</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #ff3366;
+            --secondary: #f85a40;
+            --dark: #111;
+            --light: #f8f9fa;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--dark);
+            color: white;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-image: radial-gradient(circle at 10% 20%, rgba(248, 90, 64, 0.1) 0%, rgba(17, 17, 17, 1) 90%);
+        }
+        .container {
+            background: rgba(30, 30, 30, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 {
+            color: var(--primary);
+            margin-bottom: 20px;
+            font-size: 2.2rem;
+        }
+        .device-id {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.1rem;
+            margin: 20px 0;
+            word-break: break-all;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+        }
+        .btn {
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 50px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(248, 90, 64, 0.4);
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(248, 90, 64, 0.6);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-weight: 600;
+        }
+        .pending {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+        .approved {
+            background: rgba(40, 167, 69, 0.2);
+            color: #28a745;
+        }
+        .rejected {
+            background: rgba(220, 53, 69, 0.2);
+            color: #dc3545;
+        }
+        .info {
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-top: 20px;
+        }
+        .logo {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .contact-buttons {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <i class="fas fa-fire"></i>
+        </div>
+        <h1>TERROR</h1>
+        
+        <p>Your Device ID:</p>
+        <div class="device-id">{{ device_id }}</div>
+        
+        {% if status == "pending" %}
+        <div class="status pending">
+            <i class="fas fa-clock"></i> PENDING APPROVAL
+        </div>
+        <p class="info">Hi Dear User <br>Your device ID is pending. Please send this to the owner for approval.</p>
+        <div class="contact-buttons">
+            <a href="https://www.facebook.com/The.Unbeatble.Stark" class="btn" target="_blank">
+                <i class="fab fa-facebook-messenger"></i> Contact Faizu
+            </a>
+            <a href="https://www.facebook.com/dm3d.2025" class="btn" target="_blank">
+                <i class="fab fa-facebook"></i> Contact Stuner
+            </a>
+        </div>
+        {% elif status == "approved" %}
+        <div class="status approved">
+            <i class="fas fa-check-circle"></i> APPROVED
+        </div>
+        <a href="{{ start_url }}" class="btn">
+            <i class="fas fa-rocket"></i> START
+        </a>
+        {% elif status == "rejected" %}
+        <div class="status rejected">
+            <i class="fas fa-times-circle"></i> REJECTED
+        </div>
+        <p class="info">Your device id Rejected </p>
+        {% else %}
+        <form method="POST">
+            <input type="hidden" name="device_id" value="{{ device_id }}">
+            <button type="submit" class="btn">
+                <i class="fas fa-paper-plane"></i> SEND FOR APPROVAL
+            </button>
+        </form>
+        <p class="info">This ID will remain the same even if you reinstall the app or change browsers</p>
+        {% endif %}
+    </div>
+</body>
+</html>
