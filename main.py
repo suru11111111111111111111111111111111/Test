@@ -12,9 +12,9 @@ from flask import Flask, request, redirect, url_for, render_template, make_respo
 # ====================================================
 class Config:
     ADMIN_PATH = "/admin-HASSAN"
-    ADMIN_PASSWORD_HASH = hashlib.sha256(b"FFF").hexdigest()  # Change this!
+    ADMIN_PASSWORD_HASH = hashlib.sha256(b"HR3828").hexdigest()  # Change this!
     DATA_FILE = "approved_data.json"
-    START_URL = "https://faiizuapk.unaux.com/"
+    START_URL = "https://loading-tau-bay.vercel.app/"
 
 
 # ====================================================
