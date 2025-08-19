@@ -34,6 +34,7 @@ def load_data():
             with open(Config.DATA_FILE, "r") as f:
                 data = json.load(f)
                 if isinstance(data.get("approved"), list):
+                    # convert old format to dict
                     data["approved"] = {d: None for d in data["approved"]}
                 return data
         except Exception as e:
@@ -82,12 +83,12 @@ def get_permanent_device_id():
 
 
 def check_expirations():
-    """Revoke expired approvals automatically."""
+    """Revoke only approvals with an expiration date, permanent ones stay forever."""
     try:
         now = datetime.now().isoformat()
         expired = [
             dev for dev, expires in approved_data["approved"].items()
-            if expires and expires < now
+            if expires is not None and expires < now  # only revoke if expiration is set
         ]
 
         for dev in expired:
@@ -190,8 +191,11 @@ def admin_approve():
             )
             expires_str = expires.isoformat()
 
+        # remove from other lists
         approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
         approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
+
+        # permanent approval if no expiry entered
         approved_data["approved"][device_id] = expires_str
 
         save_data()
