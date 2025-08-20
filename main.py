@@ -33,22 +33,18 @@ def load_data():
                 data = json.load(f)
 
             # --- Migrate old formats ---
-            # Case 1: approved is a list
             if isinstance(data.get("approved"), list):
                 data["approved"] = {d: True for d in data["approved"]}
 
-            # Case 2: approved is a dict with timestamps -> convert to permanent
             if isinstance(data.get("approved"), dict):
                 for dev, val in list(data["approved"].items()):
                     if val is None or isinstance(val, str):
                         data["approved"][dev] = True  # permanent
 
-            # Ensure other keys exist
             if "pending" not in data: data["pending"] = []
             if "rejected" not in data: data["rejected"] = []
             if "permanent_ids" not in data: data["permanent_ids"] = {}
 
-            # Save migrated file
             with open(Config.DATA_FILE, "w") as f:
                 json.dump(data, f, indent=4)
 
@@ -57,7 +53,6 @@ def load_data():
         except Exception as e:
             logging.error(f"Error loading data: {e}")
 
-    # Default empty structure
     return {"approved": {}, "pending": [], "rejected": [], "permanent_ids": {}}
 
 
@@ -70,7 +65,6 @@ def save_data():
         logging.error(f"Error saving data: {e}")
 
 
-# Load initial data
 approved_data = load_data()
 
 
@@ -101,7 +95,6 @@ def get_permanent_device_id():
 
 
 def is_admin(password: str) -> bool:
-    """Check if provided password matches admin password hash."""
     return hashlib.sha256(password.encode()).hexdigest() == Config.ADMIN_PASSWORD_HASH
 
 
@@ -110,7 +103,6 @@ def is_admin(password: str) -> bool:
 # ====================================================
 @app.route("/", methods=["GET", "POST"])
 def index():
-    """Main page: Show approval status or request approval."""
     try:
         device_id = request.cookies.get("device_id") or get_permanent_device_id()
 
@@ -145,58 +137,11 @@ def index():
 
 @app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
 def admin_panel():
-    """Admin panel: login and manage approvals."""
     try:
         if request.method == "POST":
             if not is_admin(request.form.get("password", "")):
                 return render_template("admin.html", logged_in=False)
 
-            return render_template("admin.html",
-                                   logged_in=True,
-                                   pending=approved_data["pending"],
-                                   approved=list(approved_data["approved"].keys()),
-                                   rejected=approved_data["rejected"],
-                                   admin_password=request.form.get("password"))
-        return render_template("admin.html", logged_in=False)
-    except Exception as e:
-        logging.error(f"Admin panel error: {e}")
-        abort(500)
-
-
-@app.route("/admin/approve", methods=["POST"])
-def admin_approve():
-    """Approve a device permanently."""
-    try:
-        if not is_admin(request.form.get("password", "")):
-            return "Invalid password", 403
-
-        device_id = request.form.get("device_id", "").strip()
-        if not device_id:
-            return redirect(url_for("admin_panel"))
-
-        # remove from other lists
-        approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
-        approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
-
-        # always permanent approval
-        approved_data["approved"][device_id] = True
-
-        save_data()
-        return redirect(url_for("admin_panel"))
-    except Exception as e:
-        logging.error(f"Approve error: {e}")
-        abort(500)
-
-
-@app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
-def admin_panel():
-    """Admin panel: login and manage approvals."""
-    try:
-        if request.method == "POST":
-            if not is_admin(request.form.get("password", "")):
-                return render_template("admin.html", logged_in=False)
-
-            # Build list of approved devices with status text
             approved_list = []
             for dev, val in approved_data["approved"].items():
                 if val is True:
@@ -216,6 +161,28 @@ def admin_panel():
     except Exception as e:
         logging.error(f"Admin panel error: {e}")
         abort(500)
+
+
+@app.route("/admin/approve", methods=["POST"])
+def admin_approve():
+    try:
+        if not is_admin(request.form.get("password", "")):
+            return "Invalid password", 403
+
+        device_id = request.form.get("device_id", "").strip()
+        if not device_id:
+            return redirect(url_for("admin_panel"))
+
+        approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
+        approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
+        approved_data["approved"][device_id] = True
+
+        save_data()
+        return redirect(url_for("admin_panel"))
+    except Exception as e:
+        logging.error(f"Approve error: {e}")
+        abort(500)
+
 
 # ====================================================
 # ENTRY POINT
