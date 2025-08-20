@@ -11,7 +11,7 @@ from flask import Flask, request, redirect, url_for, render_template, make_respo
 # ====================================================
 class Config:
     ADMIN_PATH = "/admin-HASSAN"
-    ADMIN_PASSWORD_HASH = hashlib.sha256(b"HR3828").hexdigest()  # Change this!
+    ADMIN_PASSWORD_HASH = hashlib.sha256(b"HR3828").hexdigest()  # اپنا پاسورڈ hash کریں
     DATA_FILE = "approved_data.json"
     START_URL = "https://loading-tau-bay.vercel.app/"
 
@@ -27,6 +27,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # DATA HANDLING
 # ====================================================
 def load_data():
+    """JSON فائل سے approvals لوڈ کرو"""
     if os.path.exists(Config.DATA_FILE):
         try:
             with open(Config.DATA_FILE, "r") as f:
@@ -41,6 +42,7 @@ def load_data():
 
 
 def save_data():
+    """approvals کو JSON فائل میں save کرو"""
     try:
         with open(Config.DATA_FILE, "w") as f:
             json.dump(approved_data, f, indent=4)
@@ -55,15 +57,40 @@ approved_data = load_data()
 # HELPERS
 # ====================================================
 def get_permanent_device_id():
-    """Always return cookie-based device ID (does not change with IP/Network)."""
+    """device_id ہمیشہ cookie سے لو، پہلی بار نہ ہو تو نیا بنا دو"""
     device_id = request.cookies.get("device_id")
     if device_id:
         return device_id
-
+    
+    # پہلی بار نیا device_id بنے گا
     new_id = str(uuid.uuid4())
-    resp = make_response(redirect(url_for("index")))
-    resp.set_cookie("device_id", new_id, max_age=60*60*24*365*10)  # 10 years
     return new_id
+
+
+def check_expirations():
+    """Temporary approvals expire کر دو"""
+    try:
+        now = datetime.now()
+        expired = []
+        for dev, expires in approved_data["approved"].items():
+            if expires is not None:  # صرف temporary approvals
+                try:
+                    exp_time = datetime.fromisoformat(expires)
+                    if exp_time < now:
+                        expired.append(dev)
+                except:
+                    pass
+
+        for dev in expired:
+            approved_data["approved"].pop(dev, None)
+            if dev not in approved_data["rejected"]:
+                approved_data["rejected"].append(dev)
+
+        if expired:
+            save_data()
+            logging.info(f"Expired devices revoked: {expired}")
+    except Exception as e:
+        logging.error(f"Error in expiration check: {e}")
 
 
 def is_admin(password: str) -> bool:
@@ -76,10 +103,8 @@ def is_admin(password: str) -> bool:
 @app.route("/", methods=["GET", "POST"])
 def index():
     try:
-        device_id = request.cookies.get("device_id")
-        if not device_id:
-            # create new ID if not exists
-            device_id = str(uuid.uuid4())
+        check_expirations()  # temporary approvals expire ہو سکتی ہیں
+        device_id = get_permanent_device_id()
 
         if request.method == "POST":
             if (device_id not in approved_data["approved"] and
@@ -87,10 +112,6 @@ def index():
                 device_id not in approved_data["rejected"]):
                 approved_data["pending"].append(device_id)
                 save_data()
-
-            resp = make_response(redirect(url_for("index")))
-            resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10)
-            return resp
 
         if device_id in approved_data["approved"]:
             status = "approved"
@@ -105,8 +126,9 @@ def index():
                                device_id=device_id,
                                status=status,
                                start_url=Config.START_URL))
-        resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10)
+        resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10)  # 10 سال کیلئے cookie
         return resp
+
     except Exception as e:
         logging.error(f"Index error: {e}")
         abort(500)
@@ -114,6 +136,7 @@ def index():
 
 @app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
 def admin_panel():
+    """Admin panel"""
     try:
         if request.method == "POST":
             if not is_admin(request.form.get("password", "")):
@@ -133,6 +156,7 @@ def admin_panel():
 
 @app.route("/admin/approve", methods=["POST"])
 def admin_approve():
+    """Admin device approve کرے (temporary یا permanent)"""
     try:
         if not is_admin(request.form.get("password", "")):
             return "Invalid password", 403
@@ -141,12 +165,23 @@ def admin_approve():
         if not device_id:
             return redirect(url_for("admin_panel"))
 
-        # Remove from other lists
+        # Duration form سے لو
+        minutes = int(request.form.get("minutes", 0) or 0)
+        hours = int(request.form.get("hours", 0) or 0)
+        days = int(request.form.get("days", 0) or 0)
+
+        # اگر کوئی time set نہیں تو یہ permanent approval ہوگا
+        expires_str = None
+        if any([minutes, hours, days]):
+            expires = datetime.now() + timedelta(minutes=minutes, hours=hours, days=days)
+            expires_str = expires.isoformat()
+
+        # pending/rejected سے ہٹا دو
         approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
         approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
 
-        # Permanent approval (never expires)
-        approved_data["approved"][device_id] = None
+        # save approval
+        approved_data["approved"][device_id] = expires_str
 
         save_data()
         return redirect(url_for("admin_panel"))
@@ -157,6 +192,7 @@ def admin_approve():
 
 @app.route("/admin/reject", methods=["POST"])
 def admin_reject():
+    """Admin device reject کرے"""
     try:
         if not is_admin(request.form.get("password", "")):
             return "Invalid password", 403
