@@ -3,7 +3,7 @@ import hashlib
 import uuid
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, redirect, url_for, render_template, make_response, abort
 
 # ====================================================
@@ -15,11 +15,13 @@ class Config:
     DATA_FILE = "approved_data.json"
     START_URL = "https://loading-tau-bay.vercel.app/"
 
+
 # ====================================================
 # APP SETUP
 # ====================================================
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 
 # ====================================================
 # DATA HANDLING
@@ -31,16 +33,12 @@ def load_data():
                 data = json.load(f)
                 if isinstance(data.get("approved"), list):
                     data["approved"] = {d: None for d in data["approved"]}
-                # ensure required keys exist
-                data.setdefault("approved", {})
-                data.setdefault("pending", [])
-                data.setdefault("rejected", [])
-                data.setdefault("permanent_ids", {})
                 return data
         except Exception as e:
             logging.error(f"Error loading data: {e}")
 
-    return {"approved": {}, "pending": [], "rejected": [], "permanent_ids": {}}
+    return {"approved": {}, "pending": [], "rejected": []}
+
 
 def save_data():
     try:
@@ -49,69 +47,28 @@ def save_data():
     except Exception as e:
         logging.error(f"Error saving data: {e}")
 
+
 approved_data = load_data()
+
 
 # ====================================================
 # HELPERS
 # ====================================================
-def get_device_id_by_model():
-    """Generate a unique device ID based on Mobile Model + OS Version"""
-    try:
-        user_agent = request.headers.get("User-Agent", "unknown")
-        ua_lower = user_agent.lower()
+def get_permanent_device_id():
+    """Always return cookie-based device ID (does not change with IP/Network)."""
+    device_id = request.cookies.get("device_id")
+    if device_id:
+        return device_id
 
-        os_version = "unknown"
-        model = "unknown"
+    new_id = str(uuid.uuid4())
+    resp = make_response(redirect(url_for("index")))
+    resp.set_cookie("device_id", new_id, max_age=60*60*24*365*10)  # 10 years
+    return new_id
 
-        # OS version
-        if "android" in ua_lower:
-            try:
-                os_version = user_agent.split("Android")[1].split(";")[0].strip()
-            except Exception:
-                pass
-        elif "iphone os" in ua_lower or "cpu iphone os" in ua_lower:
-            try:
-                # handle both "iPhone OS" and "CPU iPhone OS"
-                part = user_agent.split("iPhone OS")[-1]
-                os_version = part.split("like")[0].strip()
-            except Exception:
-                pass
-
-        # Model
-        if "Build/" in user_agent:
-            try:
-                model = user_agent.split("Build/")[0].split(";")[-1].strip()
-            except Exception:
-                pass
-        else:
-            try:
-                model = user_agent.split(")")[0].split(";")[-1].strip()
-            except Exception:
-                pass
-
-        fingerprint = f"{model}|{os_version}".lower()
-        fingerprint_hash = hashlib.sha256(fingerprint.encode()).hexdigest()
-
-        # Reuse existing mapping if present
-        if fingerprint_hash in approved_data["permanent_ids"]:
-            return approved_data["permanent_ids"][fingerprint_hash]
-
-        # Otherwise create new
-        new_id = str(uuid.uuid4())
-        approved_data["permanent_ids"][fingerprint_hash] = new_id
-        save_data()
-        return new_id
-
-    except Exception as e:
-        logging.error(f"Error generating device ID: {e}")
-        return str(uuid.uuid4())
-
-def check_expirations():
-    """Disabled: No auto revoke anymore"""
-    return
 
 def is_admin(password: str) -> bool:
     return hashlib.sha256(password.encode()).hexdigest() == Config.ADMIN_PASSWORD_HASH
+
 
 # ====================================================
 # ROUTES
@@ -119,12 +76,15 @@ def is_admin(password: str) -> bool:
 @app.route("/", methods=["GET", "POST"])
 def index():
     try:
-        device_id = request.cookies.get("device_id") or get_device_id_by_model()
+        device_id = request.cookies.get("device_id")
+        if not device_id:
+            # create new ID if not exists
+            device_id = str(uuid.uuid4())
 
         if request.method == "POST":
-            if (device_id not in approved_data["approved"]
-                and device_id not in approved_data["pending"]
-                and device_id not in approved_data["rejected"]):
+            if (device_id not in approved_data["approved"] and
+                device_id not in approved_data["pending"] and
+                device_id not in approved_data["rejected"]):
                 approved_data["pending"].append(device_id)
                 save_data()
 
@@ -141,13 +101,16 @@ def index():
         else:
             status = "new"
 
-        return render_template("home.html",
+        resp = make_response(render_template("home.html",
                                device_id=device_id,
                                status=status,
-                               start_url=Config.START_URL)
+                               start_url=Config.START_URL))
+        resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10)
+        return resp
     except Exception as e:
         logging.error(f"Index error: {e}")
         abort(500)
+
 
 @app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
 def admin_panel():
@@ -167,27 +130,30 @@ def admin_panel():
         logging.error(f"Admin panel error: {e}")
         abort(500)
 
-@app.route("/admin/approve/<device_id>", methods=["GET", "POST"])
-def admin_approve(device_id):
+
+@app.route("/admin/approve", methods=["POST"])
+def admin_approve():
     try:
-        # Optional: if you want to require password on POST approvals
-        if request.method == "POST":
-            if not is_admin(request.form.get("password", "")):
-                return "Invalid password", 403
+        if not is_admin(request.form.get("password", "")):
+            return "Invalid password", 403
 
-        # remove from pending/rejected safely
+        device_id = request.form.get("device_id", "").strip()
+        if not device_id:
+            return redirect(url_for("admin_panel"))
+
+        # Remove from other lists
         approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
-        if device_id in approved_data["rejected"]:
-            approved_data["rejected"].remove(device_id)
+        approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
 
-        # permanent approval
-        approved_data.setdefault("approved", {})
+        # Permanent approval (never expires)
         approved_data["approved"][device_id] = None
+
         save_data()
         return redirect(url_for("admin_panel"))
     except Exception as e:
         logging.error(f"Approve error: {e}")
         abort(500)
+
 
 @app.route("/admin/reject", methods=["POST"])
 def admin_reject():
@@ -209,6 +175,7 @@ def admin_reject():
     except Exception as e:
         logging.error(f"Reject error: {e}")
         abort(500)
+
 
 # ====================================================
 # ENTRY POINT
