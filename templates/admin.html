@@ -14,10 +14,8 @@
     .action-btn { padding: 6px 12px; border-radius: 4px; text-decoration: none; color: white; font-size: 14px; margin-right: 5px; }
     .approve-btn { background: #28a745; }
     .reject-btn { background: #dc3545; }
-    .remove-btn { background: #ffc107; color: black; }
     .approve-btn:hover { background: #218838; }
     .reject-btn:hover { background: #c82333; }
-    .remove-btn:hover { background: #e0a800; }
     form { display: inline; }
   </style>
 </head>
@@ -44,12 +42,12 @@
     <tr>
       <td>{{ device }}</td>
       <td>
-        <!-- Approve -->
+        <!-- Approve as Link -->
         <a href="{{ url_for('admin_approve', device_id=device) }}" class="action-btn approve-btn">
           <i class="fas fa-check"></i> Approve
         </a>
 
-        <!-- Reject -->
+        <!-- Reject as Form -->
         <form method="POST" action="{{ url_for('admin_reject') }}">
           <input type="hidden" name="device_id" value="{{ device }}">
           <input type="hidden" name="password" value="{{ admin_password }}">
@@ -67,21 +65,10 @@
   <table>
     <tr>
       <th>Device ID</th>
-      <th>Actions</th>
     </tr>
     {% for device in approved.keys() %}
     <tr>
       <td>{{ device }}</td>
-      <td>
-        <!-- Remove (send to rejected) -->
-        <form method="POST" action="{{ url_for('admin_remove') }}">
-          <input type="hidden" name="device_id" value="{{ device }}">
-          <input type="hidden" name="password" value="{{ admin_password }}">
-          <button type="submit" class="action-btn remove-btn">
-            <i class="fas fa-trash"></i> Remove
-          </button>
-        </form>
-      </td>
     </tr>
     {% endfor %}
   </table>
