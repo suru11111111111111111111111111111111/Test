@@ -54,20 +54,20 @@ approved_data = load_data()
 # ====================================================
 # HELPERS
 # ====================================================
+# ====================================================
+# HELPERS
+# ====================================================
 def get_permanent_device_id():
     """Always return cookie-based device ID (does not change with IP/Network)."""
     device_id = request.cookies.get("device_id")
     if device_id:
         return device_id
 
+    # agar cookie na mile to naya bana kar set karo
     new_id = str(uuid.uuid4())
     resp = make_response(redirect(url_for("index")))
     resp.set_cookie("device_id", new_id, max_age=60*60*24*365*10)  # 10 years
     return new_id
-
-
-def is_admin(password: str) -> bool:
-    return hashlib.sha256(password.encode()).hexdigest() == Config.ADMIN_PASSWORD_HASH
 
 
 # ====================================================
@@ -76,10 +76,7 @@ def is_admin(password: str) -> bool:
 @app.route("/", methods=["GET", "POST"])
 def index():
     try:
-        device_id = request.cookies.get("device_id")
-        if not device_id:
-            # create new ID if not exists
-            device_id = str(uuid.uuid4())
+        device_id = get_permanent_device_id()
 
         if request.method == "POST":
             if (device_id not in approved_data["approved"] and
