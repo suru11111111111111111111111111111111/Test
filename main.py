@@ -3,9 +3,7 @@ import hashlib
 import uuid
 import json
 import logging
-from datetime import datetime, timedelta
-from dateutil import parser   # install with: pip install python-dateutil
-
+from datetime import datetime
 from flask import Flask, request, redirect, url_for, render_template, make_response, abort
 
 # ====================================================
@@ -57,9 +55,7 @@ approved_data = load_data()
 # HELPERS
 # ====================================================
 def get_device_id_by_model():
-    """
-    Generate a unique device ID based on Mobile Model + OS Version
-    """
+    """Generate a unique device ID based on Mobile Model + OS Version"""
     try:
         user_agent = request.headers.get("User-Agent", "unknown")
         ua_lower = user_agent.lower()
@@ -112,33 +108,8 @@ def get_device_id_by_model():
 
 
 def check_expirations():
-    """
-    Only revoke approvals that actually have an expiry time.
-    If expiry is None => approval is permanent and never revoked.
-    """
-    try:
-        now = datetime.now()
-        expired = []
-        for dev, expires in approved_data["approved"].items():
-            if expires not in [None, ""]:
-                try:
-                    exp_time = parser.isoparse(expires)   # string -> datetime
-                    if exp_time < now:
-                        expired.append(dev)
-                except Exception as e:
-                    logging.error(f"Error parsing expiry for {dev}: {e}")
-
-        for dev in expired:
-            approved_data["approved"].pop(dev, None)
-            if dev not in approved_data["rejected"]:
-                approved_data["rejected"].append(dev)
-
-        if expired:
-            save_data()
-            logging.info(f"Expired devices revoked: {expired}")
-
-    except Exception as e:
-        logging.error(f"Error checking expirations: {e}")
+    """Disabled: No auto revoke anymore"""
+    return
 
 
 def is_admin(password: str) -> bool:
@@ -151,7 +122,6 @@ def is_admin(password: str) -> bool:
 @app.route("/", methods=["GET", "POST"])
 def index():
     try:
-        check_expirations()
         device_id = request.cookies.get("device_id") or get_device_id_by_model()
 
         if request.method == "POST":
@@ -212,18 +182,8 @@ def admin_approve():
         if not device_id:
             return redirect(url_for("admin_panel"))
 
-        minutes = int(request.form.get("minutes", 0) or 0)
-        hours = int(request.form.get("hours", 0) or 0)
-        days = int(request.form.get("days", 0) or 0)
-        months = int(request.form.get("months", 0) or 0)
-
-        # If no time is set => Permanent approval
+        # Always permanent approval (no expiry)
         expires_str = None
-        if any([minutes, hours, days, months]):
-            expires = datetime.now() + timedelta(
-                minutes=minutes, hours=hours, days=days + months * 30
-            )
-            expires_str = expires.isoformat()
 
         approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
         approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
