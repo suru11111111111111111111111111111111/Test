@@ -1,10 +1,10 @@
 import os
-import hashlib
-import uuid
+import re
 import json
+import uuid
+import hashlib
 import logging
 import requests
-from datetime import datetime, timedelta
 from flask import Flask, request, redirect, url_for, render_template, make_response, abort
 
 # ====================================================
@@ -12,11 +12,17 @@ from flask import Flask, request, redirect, url_for, render_template, make_respo
 # ====================================================
 class Config:
     ADMIN_PATH = "/admin-HASSAN"
-    ADMIN_PASSWORD_HASH = hashlib.sha256(b"HR3828").hexdigest()  # Change this!
-    DATA_FILE = "approved_data.json"
-    START_URL = "https://loading-tau-bay.vercel.app/"
-    APPROVAL_FILE_URL = "https://raw.githubusercontent.com/linelightinfo-commits/Test/main/approvel.txt"
+    # hash of "HR3828" -> change to your own secret
+    ADMIN_PASSWORD_HASH = hashlib.sha256(b"HR3828").hexdigest()
 
+    # Use the *RAW* GitHub URL of your approvel.txt
+    # If you only have a blob URL, we'll auto-convert it.
+    APPROVED_URL = "https://github.com/linelightinfo-commits/Test/blob/main/approvel.txt"
+
+    # Local file to store pending/rejected only
+    LOCAL_DB_FILE = "db.json"
+
+    START_URL = "https://loading-tau-bay.vercel.app/"
 
 # ====================================================
 # APP SETUP
@@ -24,64 +30,84 @@ class Config:
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# ====================================================
+# UTILS
+# ====================================================
+def to_raw_github(url: str) -> str:
+    """
+    Convert a GitHub 'blob' URL to a 'raw.githubusercontent' URL if needed.
+    """
+    if "github.com" in url and "/blob/" in url:
+        # https://github.com/{org}/{repo}/blob/{branch}/{path}
+        # -> https://raw.githubusercontent.com/{org}/{repo}/{branch}/{path}
+        parts = url.split("github.com/")[-1].split("/blob/")
+        left = parts[0]            # org/repo
+        right = parts[1]           # branch/path...
+        return f"https://raw.githubusercontent.com/{left}/{right}"
+    return url
 
-# ====================================================
-# DATA HANDLING
-# ====================================================
-def load_data():
-    if os.path.exists(Config.DATA_FILE):
+RAW_APPROVED_URL = to_raw_github(Config.APPROVED_URL)
+
+def load_local_db():
+    if os.path.exists(Config.LOCAL_DB_FILE):
         try:
-            with open(Config.DATA_FILE, "r") as f:
+            with open(Config.LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if isinstance(data.get("approved"), list):
-                    data["approved"] = {d: None for d in data["approved"]}
-                return data
+                # ensure structure
+                return {
+                    "pending": data.get("pending", []),
+                    "rejected": data.get("rejected", [])
+                }
         except Exception as e:
-            logging.error(f"Error loading data: {e}")
+            logging.error(f"Error loading local DB: {e}")
+    return {"pending": [], "rejected": []}
 
-    return {"approved": {}, "pending": [], "rejected": []}
-
-
-def save_data():
+def save_local_db(db):
     try:
-        with open(Config.DATA_FILE, "w") as f:
-            json.dump(approved_data, f, indent=4)
+        with open(Config.LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(db, f, indent=2)
     except Exception as e:
-        logging.error(f"Error saving data: {e}")
+        logging.error(f"Error saving local DB: {e}")
 
-
-approved_data = load_data()
-
-
-# ====================================================
-# HELPERS
-# ====================================================
 def fetch_approved_ids():
-    """Fetch approved IDs directly from GitHub approvel.txt"""
+    """
+    Download the approvel.txt and return a set of cleaned device IDs.
+    Each non-empty line is treated as a device ID.
+    """
     try:
-        r = requests.get(Config.APPROVAL_FILE_URL, timeout=5)
-        if r.status_code == 200:
-            return {line.strip() for line in r.text.splitlines() if line.strip()}
+        r = requests.get(RAW_APPROVED_URL, timeout=8)
+        r.raise_for_status()
+        ids = set()
+        for line in r.text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # accept UUIDs or any token you use; keep it permissive but clean
+            # remove inline comments like "id123  # comment"
+            line = line.split("#", 1)[0].strip()
+            if line:
+                ids.add(line)
+        return ids
     except Exception as e:
-        logging.error(f"Error fetching approval file: {e}")
-    return set()
+        logging.error(f"Failed to fetch approved IDs: {e}")
+        # On failure, treat as empty set (no one approved)
+        return set()
 
-
-def get_permanent_device_id():
-    """Always return cookie-based device ID (does not change with IP/Network)."""
+def get_or_set_device_cookie():
     device_id = request.cookies.get("device_id")
-    if device_id:
-        return device_id
-
-    new_id = str(uuid.uuid4())
-    resp = make_response(redirect(url_for("index")))
-    resp.set_cookie("device_id", new_id, max_age=60*60*24*365*10)  # 10 years
-    return new_id
-
+    if not device_id:
+        device_id = str(uuid.uuid4())
+    resp = make_response()
+    resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10, httponly=True, samesite="Lax")
+    return device_id, resp
 
 def is_admin(password: str) -> bool:
     return hashlib.sha256(password.encode()).hexdigest() == Config.ADMIN_PASSWORD_HASH
 
+# ====================================================
+# STATE
+# ====================================================
+local_db = load_local_db()
 
 # ====================================================
 # ROUTES
@@ -89,29 +115,42 @@ def is_admin(password: str) -> bool:
 @app.route("/", methods=["GET", "POST"])
 def index():
     try:
+        # Ensure device cookie exists
         device_id = request.cookies.get("device_id")
         if not device_id:
-            # create new ID if not exists
             device_id = str(uuid.uuid4())
 
-        # fetch live approved list
+        if request.method == "POST":
+            # User asks for approval
+            if (device_id not in local_db["pending"]
+                and device_id not in local_db["rejected"]):
+                local_db["pending"].append(device_id)
+                save_local_db(local_db)
+
+            resp = make_response(redirect(url_for("index")))
+            resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10, httponly=True, samesite="Lax")
+            return resp
+
         approved_ids = fetch_approved_ids()
 
         if device_id in approved_ids:
             status = "approved"
-        else:
+        elif device_id in local_db["pending"]:
+            status = "pending"
+        elif device_id in local_db["rejected"]:
             status = "rejected"
+        else:
+            status = "new"
 
         resp = make_response(render_template("home.html",
-                               device_id=device_id,
-                               status=status,
-                               start_url=Config.START_URL))
-        resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10)
+                           device_id=device_id,
+                           status=status,
+                           start_url=Config.START_URL))
+        resp.set_cookie("device_id", device_id, max_age=60*60*24*365*10, httponly=True, samesite="Lax")
         return resp
     except Exception as e:
         logging.error(f"Index error: {e}")
         abort(500)
-
 
 @app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
 def admin_panel():
@@ -120,31 +159,71 @@ def admin_panel():
             if not is_admin(request.form.get("password", "")):
                 return render_template("admin.html", logged_in=False)
 
-            approved_ids = fetch_approved_ids()
-            return render_template("admin.html",
-                                   logged_in=True,
-                                   pending=approved_data["pending"],
-                                   approved=list(approved_ids),
-                                   rejected=approved_data["rejected"],
-                                   admin_password=request.form.get("password"))
+            approved_ids = sorted(fetch_approved_ids())
+            return render_template(
+                "admin.html",
+                logged_in=True,
+                pending=local_db["pending"],
+                approved=approved_ids,          # read-only list from GitHub
+                rejected=local_db["rejected"],
+                admin_password=request.form.get("password")
+            )
         return render_template("admin.html", logged_in=False)
     except Exception as e:
         logging.error(f"Admin panel error: {e}")
         abort(500)
 
-
 @app.route("/admin/approve", methods=["POST"])
 def admin_approve():
-    return "Approval is now managed only via approvel.txt file on GitHub.", 403
+    """
+    Since approvals are MANUAL via GitHub file, this endpoint just
+    manages local queues. It removes the device from rejected/pending.
+    To truly approve, add the device_id to approvel.txt on GitHub.
+    """
+    try:
+        if not is_admin(request.form.get("password", "")):
+            return "Invalid password", 403
 
+        device_id = request.form.get("device_id", "").strip()
+        if not device_id:
+            return redirect(url_for("admin_panel"))
+
+        # Move out of rejected/pending queues locally
+        local_db["pending"]  = [d for d in local_db["pending"]  if d != device_id]
+        local_db["rejected"] = [d for d in local_db["rejected"] if d != device_id]
+        save_local_db(local_db)
+
+        # IMPORTANT: Actual approval requires editing approvel.txt in GitHub.
+        return redirect(url_for("admin_panel"))
+    except Exception as e:
+        logging.error(f"Approve error: {e}")
+        abort(500)
 
 @app.route("/admin/reject", methods=["POST"])
 def admin_reject():
-    return "Rejection is now managed only via approvel.txt file on GitHub.", 403
+    try:
+        if not is_admin(request.form.get("password", "")):
+            return "Invalid password", 403
 
+        device_id = request.form.get("device_id", "").strip()
+        if not device_id:
+            return redirect(url_for("admin_panel"))
+
+        # Remove from pending
+        local_db["pending"] = [d for d in local_db["pending"] if d != device_id]
+        # Add to rejected (once)
+        if device_id not in local_db["rejected"]:
+            local_db["rejected"].append(device_id)
+
+        save_local_db(local_db)
+        return redirect(url_for("admin_panel"))
+    except Exception as e:
+        logging.error(f"Reject error: {e}")
+        abort(500)
 
 # ====================================================
 # ENTRY POINT
 # ====================================================
 if __name__ == "__main__":
+    # Don’t use debug=True in production
     app.run(host="0.0.0.0", port=5000)
