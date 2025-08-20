@@ -4,6 +4,7 @@ import uuid
 import json
 import logging
 from datetime import datetime, timedelta
+from dateutil import parser   # install with: pip install python-dateutil
 
 from flask import Flask, request, redirect, url_for, render_template, make_response, abort
 
@@ -58,7 +59,6 @@ approved_data = load_data()
 def get_device_id_by_model():
     """
     Generate a unique device ID based on Mobile Model + OS Version
-    (ignores browser info, IP, network, etc.)
     """
     try:
         user_agent = request.headers.get("User-Agent", "unknown")
@@ -80,14 +80,13 @@ def get_device_id_by_model():
             except:
                 pass
 
-        # Extract Model (mostly after "Build/")
+        # Extract Model
         if "Build/" in user_agent:
             try:
                 model = user_agent.split("Build/")[0].split(";")[-1].strip()
             except:
                 pass
         else:
-            # fallback: last token before ")"
             try:
                 model = user_agent.split(")")[0].split(";")[-1].strip()
             except:
@@ -97,11 +96,11 @@ def get_device_id_by_model():
         fingerprint = f"{model}|{os_version}".lower()
         fingerprint_hash = hashlib.sha256(fingerprint.encode()).hexdigest()
 
-        # If already mapped, return the same permanent ID
+        # If already mapped, return
         if fingerprint_hash in approved_data["permanent_ids"]:
             return approved_data["permanent_ids"][fingerprint_hash]
 
-        # Otherwise create new permanent ID
+        # Otherwise create new
         new_id = str(uuid.uuid4())
         approved_data["permanent_ids"][fingerprint_hash] = new_id
         save_data()
@@ -113,12 +112,22 @@ def get_device_id_by_model():
 
 
 def check_expirations():
+    """
+    Only revoke approvals that actually have an expiry time.
+    If expiry is None => approval is permanent and never revoked.
+    """
     try:
-        now = datetime.now().isoformat()
-        expired = [
-            dev for dev, expires in approved_data["approved"].items()
-            if expires is not None and expires < now
-        ]
+        now = datetime.now()
+        expired = []
+        for dev, expires in approved_data["approved"].items():
+            if expires not in [None, ""]:
+                try:
+                    exp_time = parser.isoparse(expires)   # string -> datetime
+                    if exp_time < now:
+                        expired.append(dev)
+                except Exception as e:
+                    logging.error(f"Error parsing expiry for {dev}: {e}")
+
         for dev in expired:
             approved_data["approved"].pop(dev, None)
             if dev not in approved_data["rejected"]:
@@ -208,6 +217,7 @@ def admin_approve():
         days = int(request.form.get("days", 0) or 0)
         months = int(request.form.get("months", 0) or 0)
 
+        # If no time is set => Permanent approval
         expires_str = None
         if any([minutes, hours, days, months]):
             expires = datetime.now() + timedelta(
