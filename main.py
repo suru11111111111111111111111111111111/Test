@@ -188,28 +188,34 @@ def admin_approve():
         abort(500)
 
 
-@app.route("/admin/reject", methods=["POST"])
-def admin_reject():
-    """Reject (or revoke) a device."""
+@app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
+def admin_panel():
+    """Admin panel: login and manage approvals."""
     try:
-        if not is_admin(request.form.get("password", "")):
-            return "Invalid password", 403
+        if request.method == "POST":
+            if not is_admin(request.form.get("password", "")):
+                return render_template("admin.html", logged_in=False)
 
-        device_id = request.form.get("device_id", "").strip()
-        if not device_id:
-            return redirect(url_for("admin_panel"))
+            # Build list of approved devices with status text
+            approved_list = []
+            for dev, val in approved_data["approved"].items():
+                if val is True:
+                    approved_list.append((dev, "Permanent ✅"))
+                elif val is None:
+                    approved_list.append((dev, "Permanent ✅"))
+                else:
+                    approved_list.append((dev, f"Expires: {val}"))
 
-        approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
-        approved_data["approved"].pop(device_id, None)
-        if device_id not in approved_data["rejected"]:
-            approved_data["rejected"].append(device_id)
-
-        save_data()
-        return redirect(url_for("admin_panel"))
+            return render_template("admin.html",
+                                   logged_in=True,
+                                   pending=approved_data["pending"],
+                                   approved=approved_list,
+                                   rejected=approved_data["rejected"],
+                                   admin_password=request.form.get("password"))
+        return render_template("admin.html", logged_in=False)
     except Exception as e:
-        logging.error(f"Reject error: {e}")
+        logging.error(f"Admin panel error: {e}")
         abort(500)
-
 
 # ====================================================
 # ENTRY POINT
