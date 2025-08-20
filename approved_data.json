@@ -1,6 +1,8 @@
 {
     "approved": {
-        "51aec4db-d697-4753-baab-bc564038ad4c": "88060bbc-1f35-4dce-aad9-36096ac6fc22":null
+        "{
+    "approved": {
+        "123e4567-e89b-12d3-a456-426614174000": null
     },
     "pending": [],
     "rejected": [],
@@ -8,4 +10,11 @@
         "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890": "123e4567-e89b-12d3-a456-426614174000"
     }
 }
-
+": null
+    },
+    "pending": [],
+    "rejected": [],
+    "permanent_ids": {
+        "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890": "123e4567-e89b-12d3-a456-426614174000"
+    }
+}
