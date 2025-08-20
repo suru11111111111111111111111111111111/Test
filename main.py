@@ -28,13 +28,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # DATA HANDLING
 # ====================================================
 def load_data():
-    """Load approval data from JSON file."""
     if os.path.exists(Config.DATA_FILE):
         try:
             with open(Config.DATA_FILE, "r") as f:
                 data = json.load(f)
                 if isinstance(data.get("approved"), list):
-                    # convert old format to dict
                     data["approved"] = {d: None for d in data["approved"]}
                 return data
         except Exception as e:
@@ -44,7 +42,6 @@ def load_data():
 
 
 def save_data():
-    """Save approval data to JSON file."""
     try:
         with open(Config.DATA_FILE, "w") as f:
             json.dump(approved_data, f, indent=4)
@@ -52,22 +49,42 @@ def save_data():
         logging.error(f"Error saving data: {e}")
 
 
-# Load initial data
 approved_data = load_data()
 
 
 # ====================================================
 # HELPERS
 # ====================================================
-def get_permanent_device_id():
-    """Generate a persistent device ID."""
+def get_device_id_by_model():
+    """
+    Generate device ID based only on Mobile Model + OS Version (ignore browser info).
+    """
     try:
-        fingerprint_parts = [
-            request.headers.get("User-Agent", ""),
-            request.headers.get("Accept-Language", ""),
-            str(uuid.getnode())
-        ]
-        fingerprint = "|".join(filter(None, fingerprint_parts))
+        user_agent = request.headers.get("User-Agent", "unknown").lower()
+
+        # Extract OS version
+        os_version = "unknown"
+        if "android" in user_agent:
+            try:
+                os_version = user_agent.split("android")[1].split(";")[0].strip()
+            except:
+                pass
+        elif "iphone os" in user_agent:
+            try:
+                os_version = user_agent.split("iphone os")[1].split("like")[0].strip()
+            except:
+                pass
+
+        # Extract Model (usually after 'build/')
+        model = "unknown"
+        if "build/" in user_agent:
+            try:
+                model = user_agent.split("build/")[0].split(";")[-1].strip()
+            except:
+                pass
+
+        # fingerprint = model + os_version
+        fingerprint = f"{model}|{os_version}"
         fingerprint_hash = hashlib.sha256(fingerprint.encode()).hexdigest()
 
         if fingerprint_hash in approved_data["permanent_ids"]:
@@ -83,14 +100,12 @@ def get_permanent_device_id():
 
 
 def check_expirations():
-    """Revoke only approvals with an expiration date, permanent ones stay forever."""
     try:
         now = datetime.now().isoformat()
         expired = [
             dev for dev, expires in approved_data["approved"].items()
-            if expires is not None and expires < now  # only revoke if expiration is set
+            if expires is not None and expires < now
         ]
-
         for dev in expired:
             approved_data["approved"].pop(dev, None)
             if dev not in approved_data["rejected"]:
@@ -105,7 +120,6 @@ def check_expirations():
 
 
 def is_admin(password: str) -> bool:
-    """Check if provided password matches admin password hash."""
     return hashlib.sha256(password.encode()).hexdigest() == Config.ADMIN_PASSWORD_HASH
 
 
@@ -114,10 +128,9 @@ def is_admin(password: str) -> bool:
 # ====================================================
 @app.route("/", methods=["GET", "POST"])
 def index():
-    """Main page: Show approval status or request approval."""
     try:
         check_expirations()
-        device_id = request.cookies.get("device_id") or get_permanent_device_id()
+        device_id = request.cookies.get("device_id") or get_device_id_by_model()
 
         if request.method == "POST":
             if (device_id not in approved_data["approved"] and
@@ -150,7 +163,6 @@ def index():
 
 @app.route(Config.ADMIN_PATH, methods=["GET", "POST"])
 def admin_panel():
-    """Admin panel: login and manage approvals."""
     try:
         if request.method == "POST":
             if not is_admin(request.form.get("password", "")):
@@ -170,7 +182,6 @@ def admin_panel():
 
 @app.route("/admin/approve", methods=["POST"])
 def admin_approve():
-    """Approve a device with optional expiration."""
     try:
         if not is_admin(request.form.get("password", "")):
             return "Invalid password", 403
@@ -191,11 +202,8 @@ def admin_approve():
             )
             expires_str = expires.isoformat()
 
-        # remove from other lists
         approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
         approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
-
-        # permanent approval if no expiry entered
         approved_data["approved"][device_id] = expires_str
 
         save_data()
@@ -207,7 +215,6 @@ def admin_approve():
 
 @app.route("/admin/reject", methods=["POST"])
 def admin_reject():
-    """Reject (or revoke) a device."""
     try:
         if not is_admin(request.form.get("password", "")):
             return "Invalid password", 403
