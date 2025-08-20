@@ -57,43 +57,56 @@ approved_data = load_data()
 # ====================================================
 def get_device_id_by_model():
     """
-    Generate device ID based only on Mobile Model + OS Version (ignore browser info).
+    Generate a unique device ID based on Mobile Model + OS Version
+    (ignores browser info, IP, network, etc.)
     """
     try:
-        user_agent = request.headers.get("User-Agent", "unknown").lower()
+        user_agent = request.headers.get("User-Agent", "unknown")
+        ua_lower = user_agent.lower()
+
+        # Default values
+        os_version = "unknown"
+        model = "unknown"
 
         # Extract OS version
-        os_version = "unknown"
-        if "android" in user_agent:
+        if "android" in ua_lower:
             try:
-                os_version = user_agent.split("android")[1].split(";")[0].strip()
+                os_version = user_agent.split("Android")[1].split(";")[0].strip()
             except:
                 pass
-        elif "iphone os" in user_agent:
+        elif "iPhone OS" in user_agent:
             try:
-                os_version = user_agent.split("iphone os")[1].split("like")[0].strip()
-            except:
-                pass
-
-        # Extract Model (usually after 'build/')
-        model = "unknown"
-        if "build/" in user_agent:
-            try:
-                model = user_agent.split("build/")[0].split(";")[-1].strip()
+                os_version = user_agent.split("iPhone OS")[1].split("like")[0].strip()
             except:
                 pass
 
-        # fingerprint = model + os_version
-        fingerprint = f"{model}|{os_version}"
+        # Extract Model (mostly after "Build/")
+        if "Build/" in user_agent:
+            try:
+                model = user_agent.split("Build/")[0].split(";")[-1].strip()
+            except:
+                pass
+        else:
+            # fallback: last token before ")"
+            try:
+                model = user_agent.split(")")[0].split(";")[-1].strip()
+            except:
+                pass
+
+        # Final fingerprint
+        fingerprint = f"{model}|{os_version}".lower()
         fingerprint_hash = hashlib.sha256(fingerprint.encode()).hexdigest()
 
+        # If already mapped, return the same permanent ID
         if fingerprint_hash in approved_data["permanent_ids"]:
             return approved_data["permanent_ids"][fingerprint_hash]
 
+        # Otherwise create new permanent ID
         new_id = str(uuid.uuid4())
         approved_data["permanent_ids"][fingerprint_hash] = new_id
         save_data()
         return new_id
+
     except Exception as e:
         logging.error(f"Error generating device ID: {e}")
         return str(uuid.uuid4())
