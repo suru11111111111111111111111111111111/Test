@@ -172,25 +172,16 @@ def admin_panel():
         abort(500)
 
 
-@app.route("/admin/approve", methods=["POST"])
-def admin_approve():
-    try:
-        if not is_admin(request.form.get("password", "")):
-            return "Invalid password", 403
+@app.route("/admin/approve/<device_id>")
+def admin_approve(device_id):
+    if device_id in approved_data["pending"]:
+        approved_data["pending"].remove(device_id)
+    if device_id in approved_data["rejected"]:
+        approved_data["rejected"].remove(device_id)
 
-        device_id = request.form.get("device_id", "").strip()
-        if not device_id:
-            return redirect(url_for("admin_panel"))
-
-        # Always permanent approval (no expiry)
-        expires_str = None
-
-        approved_data["pending"] = [d for d in approved_data["pending"] if d != device_id]
-        approved_data["rejected"] = [d for d in approved_data["rejected"] if d != device_id]
-        approved_data["approved"][device_id] = expires_str
-
-        save_data()
-        return redirect(url_for("admin_panel"))
+    approved_data["approved"][device_id] = None  # ✅ Permanent approval
+    save_data()  # ✅ Yahin file me turant save ho jata hai
+    return redirect(Config.ADMIN_PATH)
     except Exception as e:
         logging.error(f"Approve error: {e}")
         abort(500)
