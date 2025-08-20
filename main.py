@@ -34,12 +34,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # UTILS
 # ====================================================
 def to_raw_github(url: str) -> str:
-    """
-    Convert a GitHub 'blob' URL to a 'raw.githubusercontent' URL if needed.
-    """
+    """Convert a GitHub 'blob' URL to a 'raw.githubusercontent' URL if needed."""
     if "github.com" in url and "/blob/" in url:
-        # https://github.com/{org}/{repo}/blob/{branch}/{path}
-        # -> https://raw.githubusercontent.com/{org}/{repo}/{branch}/{path}
         parts = url.split("github.com/")[-1].split("/blob/")
         left = parts[0]            # org/repo
         right = parts[1]           # branch/path...
@@ -53,7 +49,6 @@ def load_local_db():
         try:
             with open(Config.LOCAL_DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # ensure structure
                 return {
                     "pending": data.get("pending", []),
                     "rejected": data.get("rejected", [])
@@ -70,10 +65,7 @@ def save_local_db(db):
         logging.error(f"Error saving local DB: {e}")
 
 def fetch_approved_ids():
-    """
-    Download the approvel.txt and return a set of cleaned device IDs.
-    Each non-empty line is treated as a device ID.
-    """
+    """Download the approvel.txt and return a set of cleaned device IDs."""
     try:
         r = requests.get(RAW_APPROVED_URL, timeout=8)
         r.raise_for_status()
@@ -82,15 +74,12 @@ def fetch_approved_ids():
             line = line.strip()
             if not line:
                 continue
-            # accept UUIDs or any token you use; keep it permissive but clean
-            # remove inline comments like "id123  # comment"
             line = line.split("#", 1)[0].strip()
             if line:
                 ids.add(line)
         return ids
     except Exception as e:
         logging.error(f"Failed to fetch approved IDs: {e}")
-        # On failure, treat as empty set (no one approved)
         return set()
 
 def get_or_set_device_cookie():
@@ -115,13 +104,11 @@ local_db = load_local_db()
 @app.route("/", methods=["GET", "POST"])
 def index():
     try:
-        # Ensure device cookie exists
         device_id = request.cookies.get("device_id")
         if not device_id:
             device_id = str(uuid.uuid4())
 
         if request.method == "POST":
-            # User asks for approval
             if (device_id not in local_db["pending"]
                 and device_id not in local_db["rejected"]):
                 local_db["pending"].append(device_id)
@@ -159,12 +146,15 @@ def admin_panel():
             if not is_admin(request.form.get("password", "")):
                 return render_template("admin.html", logged_in=False)
 
-            approved_ids = sorted(fetch_approved_ids())
+            # 🔧 FIX: convert approved list to dict so template works
+            approved_ids = fetch_approved_ids()
+            approved_dict = {device: None for device in approved_ids}
+
             return render_template(
                 "admin.html",
                 logged_in=True,
                 pending=local_db["pending"],
-                approved=approved_ids,          # read-only list from GitHub
+                approved=approved_dict,   # ✅ dict with device: None
                 rejected=local_db["rejected"],
                 admin_password=request.form.get("password")
             )
@@ -175,11 +165,6 @@ def admin_panel():
 
 @app.route("/admin/approve", methods=["POST"])
 def admin_approve():
-    """
-    Since approvals are MANUAL via GitHub file, this endpoint just
-    manages local queues. It removes the device from rejected/pending.
-    To truly approve, add the device_id to approvel.txt on GitHub.
-    """
     try:
         if not is_admin(request.form.get("password", "")):
             return "Invalid password", 403
@@ -188,12 +173,10 @@ def admin_approve():
         if not device_id:
             return redirect(url_for("admin_panel"))
 
-        # Move out of rejected/pending queues locally
         local_db["pending"]  = [d for d in local_db["pending"]  if d != device_id]
         local_db["rejected"] = [d for d in local_db["rejected"] if d != device_id]
         save_local_db(local_db)
 
-        # IMPORTANT: Actual approval requires editing approvel.txt in GitHub.
         return redirect(url_for("admin_panel"))
     except Exception as e:
         logging.error(f"Approve error: {e}")
@@ -209,9 +192,7 @@ def admin_reject():
         if not device_id:
             return redirect(url_for("admin_panel"))
 
-        # Remove from pending
         local_db["pending"] = [d for d in local_db["pending"] if d != device_id]
-        # Add to rejected (once)
         if device_id not in local_db["rejected"]:
             local_db["rejected"].append(device_id)
 
@@ -225,5 +206,4 @@ def admin_reject():
 # ENTRY POINT
 # ====================================================
 if __name__ == "__main__":
-    # Don’t use debug=True in production
     app.run(host="0.0.0.0", port=5000)
