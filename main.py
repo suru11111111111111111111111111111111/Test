@@ -12,7 +12,7 @@ from flask import Flask, request, redirect, url_for, render_template, make_respo
 # ====================================================
 class Config:
     ADMIN_PATH = "/admin-RAHUL"
-    # hash of "HR3828" -> change to your own secret
+    # hash of "RAHULDON" -> change to your own secret
     ADMIN_PASSWORD_HASH = hashlib.sha256(b"RAHULDON").hexdigest()
 
     # Use the *RAW* GitHub URL of your approvel.txt
