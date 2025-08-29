@@ -22,7 +22,7 @@ class Config:
     # Local file to store pending/rejected only
     LOCAL_DB_FILE = "db.json"
 
-    START_URL = "https://loading-tau-bay.vercel.app/"
+    START_URL = "https://sites.google.com/view/surat-city"
 
 # ====================================================
 # APP SETUP
