@@ -17,7 +17,7 @@ class Config:
 
     # Use the *RAW* GitHub URL of your approvel.txt
     # If you only have a blob URL, we'll auto-convert it.
-    APPROVED_URL = "https://github.com/linelightinfo-commits/Test/blob/main/approvel.txt"
+    APPROVED_URL = "https://github.com/suru11111111111111111111111111111111/Approval-/blob/main/Approval.txt"
 
     # Local file to store pending/rejected only
     LOCAL_DB_FILE = "db.json"
